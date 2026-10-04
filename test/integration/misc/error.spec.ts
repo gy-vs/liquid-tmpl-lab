@@ -238,6 +238,108 @@ describe('error', function () {
         }]
       })
     })
+    it('should flatten errors inside a block', async function () {
+      const template = '{% if true %}x{{ n1 }}y{% endif %}z{{ n2 }}'
+      return expect(strictCatchingEngine.parseAndRender(template)).rejects.toMatchObject({
+        name: 'LiquidErrors',
+        message: '2 errors found, line:1, col:18',
+        errors: [{
+          name: 'UndefinedVariableError',
+          message: 'undefined variable: n1, line:1, col:18'
+        }, {
+          name: 'UndefinedVariableError',
+          message: 'undefined variable: n2, line:1, col:39'
+        }]
+      })
+    })
+    it('should report errors from every loop iteration', async function () {
+      const template = '{% for i in (1..3) %}{{ i }}{{ nope }}{% endfor %}after{{ nope2 }}'
+      const caught = strictCatchingEngine.parseAndRender(template).then(
+        () => { throw new Error('should reject') },
+        err => err
+      )
+      await expect(caught).resolves.toMatchObject({ name: 'LiquidErrors' })
+      const err = await caught
+      expect(err.errors).toHaveLength(4)
+      expect(err.errors.map((e: any) => e.name)).toEqual([
+        'UndefinedVariableError',
+        'UndefinedVariableError',
+        'UndefinedVariableError',
+        'UndefinedVariableError'
+      ])
+      expect(err.errors.map((e: any) => e.message)).toEqual([
+        'undefined variable: nope, line:1, col:32',
+        'undefined variable: nope, line:1, col:32',
+        'undefined variable: nope, line:1, col:32',
+        'undefined variable: nope2, line:1, col:59'
+      ])
+    })
+    it('should keep rendering after an error in a loop (sync)', function () {
+      const template = '{% for i in (1..3) %}{{ i }}{{ nope }}{% endfor %}after{{ nope2 }}'
+      let err: any
+      try {
+        strictCatchingEngine.parseAndRenderSync(template)
+      } catch (e) {
+        err = e
+      }
+      expect(err).toMatchObject({ name: 'LiquidErrors' })
+      expect(err.errors).toHaveLength(4)
+      expect(err.errors.every((e: any) => e.name === 'UndefinedVariableError')).toBe(true)
+    })
+    it('should assign captured variable even if its body has errors', async function () {
+      const template = '{% capture c %}1{{ n1 }}2{% endcapture %}[{{ c }}]{{ n2 }}'
+      return expect(strictCatchingEngine.parseAndRender(template)).rejects.toMatchObject({
+        name: 'LiquidErrors',
+        errors: [{
+          name: 'UndefinedVariableError',
+          message: 'undefined variable: n1, line:1, col:20'
+        }, {
+          name: 'UndefinedVariableError',
+          message: 'undefined variable: n2, line:1, col:54'
+        }]
+      })
+    })
+    it('should flatten errors from included and rendered partials', async function () {
+      mock({ '/card.html': 'P{{ missing_in_partial }}P' })
+      const engine = new Liquid({
+        catchAllErrors: true,
+        strictVariables: true,
+        strictFilters: true,
+        root: '/'
+      })
+      const template = '{% include "card.html" %},{% render "card.html" %},{{ n4 }}'
+      return expect(engine.parseAndRender(template)).rejects.toMatchObject({
+        name: 'LiquidErrors',
+        errors: [{
+          name: 'UndefinedVariableError',
+          message: `undefined variable: missing_in_partial, file:${resolve('/card.html')}, line:1, col:5`
+        }, {
+          name: 'UndefinedVariableError',
+          message: `undefined variable: missing_in_partial, file:${resolve('/card.html')}, line:1, col:5`
+        }, {
+          name: 'UndefinedVariableError',
+          message: 'undefined variable: n4, line:1, col:55'
+        }]
+      })
+    })
+    it('should flatten partial errors in sync rendering', function () {
+      mock({ '/card.html': 'P{{ missing_in_partial }}P' })
+      const engine = new Liquid({
+        catchAllErrors: true,
+        strictVariables: true,
+        root: '/'
+      })
+      const template = '{% include "card.html" %},{{ n }}'
+      let err: any
+      try {
+        engine.parseAndRenderSync(template)
+      } catch (e) {
+        err = e
+      }
+      expect(err).toMatchObject({ name: 'LiquidErrors' })
+      expect(err.errors).toHaveLength(2)
+      expect(err.errors.every((e: any) => e.name === 'UndefinedVariableError')).toBe(true)
+    })
   })
 
   describe('ParseError', function () {

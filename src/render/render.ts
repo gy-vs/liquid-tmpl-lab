@@ -8,14 +8,20 @@ export class Render {
   public renderTemplatesToNodeStream (templates: Template[], ctx: Context): NodeJS.ReadableStream {
     const emitter = new StreamedEmitter()
     Promise.resolve().then(() => toPromise(this.renderTemplates(templates, ctx, emitter)))
-      .then(() => emitter.end(), err => emitter.error(err))
+      .then(() => {
+        if (ctx.opts.catchAllErrors && ctx.errors.length) {
+          emitter.error(new LiquidErrors(ctx.errors))
+        } else {
+          emitter.end()
+        }
+      })
+      .catch(err => emitter.error(err))
     return emitter.stream
   }
   public * renderTemplates (templates: Template[], ctx: Context, emitter?: Emitter): IterableIterator<any> {
     if (!emitter) {
       emitter = ctx.opts.keepOutputType ? new KeepingTypeEmitter() : new SimpleEmitter()
     }
-    const errors = []
     for (const tpl of templates) {
       ctx.renderLimit.check(getPerformance().now())
       try {
@@ -26,12 +32,13 @@ export class Render {
         if (ctx.breakCalled || ctx.continueCalled) break
       } catch (e) {
         const err = LiquidError.is(e) ? e : new RenderError(e as Error, tpl)
-        if (ctx.opts.catchAllErrors) errors.push(err)
+        // when catchAllErrors is enabled errors are gathered on a shared
+        // context array so that nested blocks, loops and partials keep
+        // rendering and contribute their errors in order. The top-level
+        // render is responsible for throwing a single LiquidErrors.
+        if (ctx.opts.catchAllErrors) ctx.errors.push(err)
         else throw err
       }
-    }
-    if (errors.length) {
-      throw new LiquidErrors(errors)
     }
     return emitter.buffer
   }

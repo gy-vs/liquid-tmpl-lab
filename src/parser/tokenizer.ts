@@ -313,7 +313,7 @@ export class Tokenizer {
     const variable = this.readLiteral() || this.readQuoted() || this.readRange() || this.readNumber()
     const props = this.readProperties(!variable)
     if (!props.length) return variable
-    return new PropertyAccessToken(variable, props, this.input, begin, this.p)
+    return new PropertyAccessToken(variable, props, this.input, begin, this.p, this.file)
   }
 
   readScopeValue (): ValueToken | undefined {
@@ -321,7 +321,7 @@ export class Tokenizer {
     const begin = this.p
     const props = this.readProperties()
     if (!props.length) return undefined
-    return new PropertyAccessToken(undefined, props, this.input, begin, this.p)
+    return new PropertyAccessToken(undefined, props, this.input, begin, this.p, this.file)
   }
 
   private readProperties (isBegin = true): (ValueToken | IdentifierToken)[] {
