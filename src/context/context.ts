@@ -3,7 +3,7 @@ import { Drop } from '../drop/drop'
 import { __assign } from 'tslib'
 import { NormalizedFullOptions, defaultOptions, RenderOptions } from '../liquid-options'
 import { Scope } from './scope'
-import { hasOwnProperty, isArray, isNil, isUndefined, isString, isFunction, toLiquid, InternalUndefinedVariableError, toValueSync, isObject, Limiter, toValue } from '../util'
+import { hasOwnProperty, isArray, isNil, isUndefined, isString, isFunction, toLiquid, InternalUndefinedVariableError, toValueSync, isObject, Limiter, toValue, RenderError } from '../util'
 
 type PropertyKey = string | number;
 
@@ -27,6 +27,12 @@ export class Context {
   public sync: boolean
   public breakCalled = false
   public continueCalled = false
+  /**
+   * Render errors collected when `catchAllErrors` is enabled. Shared by nested
+   * renders (block bodies, partials, child contexts) so all errors are thrown
+   * as a single flattened `LiquidErrors` by the top-level render.
+   */
+  public renderErrors?: RenderError[]
   /**
    * The normalized liquid options object
    */
@@ -103,7 +109,7 @@ export class Context {
     return this.scopes[0]
   }
   public spawn (scope = {}) {
-    return new Context(scope, this.opts, {
+    const child = new Context(scope, this.opts, {
       sync: this.sync,
       globals: this.globals,
       strictVariables: this.strictVariables
@@ -111,6 +117,8 @@ export class Context {
       renderLimit: this.renderLimit,
       memoryLimit: this.memoryLimit
     })
+    child.renderErrors = this.renderErrors
+    return child
   }
   private findScope (key: string | number) {
     for (let i = this.scopes.length - 1; i >= 0; i--) {
